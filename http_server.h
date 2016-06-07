@@ -14,6 +14,7 @@
 #include <thread>
 #include <iostream>
 #include <memory>
+#include <mutex>
 class http_server{
 public:
 	class http_client : public buffered_client_iostream, 
@@ -45,17 +46,13 @@ public:
 				return std::make_shared<http_client>(_servlets_map);
 			}
 			virtual void notify_accept(std::shared_ptr<client_iostream> client, acceptor_status_t status) override{
-				int fd = client->get_fd();
-				auto it = _client_map.find(fd);	
-				if(it != _client_map.end()){
-					_client_map.erase(it);
-				}
-				//_client_map[client->get_fd()] = client;
-				_client_map.insert(std::pair<int,std::shared_ptr<client_iostream>>(fd,client));
+				std::lock_guard<std::mutex> lk(_client_map_mutex);
+				_client_map[client->get_fd()] = client;
 				client->register_close_handler(std::bind(&http_accpetor::close,this,std::placeholders::_1));
 			}
 		public:
 			void close(int fd){
+				std::lock_guard<std::mutex> lk(_client_map_mutex);
 				auto it = _client_map.find(fd);	
 				if(it != _client_map.end()){
 					_client_map.erase(it);
@@ -63,6 +60,7 @@ public:
 			}
 		private:
 			std::map<int,std::shared_ptr<client_iostream>> _client_map;	
+			std::mutex _client_map_mutex;
 			std::map<std::string, std::shared_ptr<http_servlet> >& _servlets_map;
 	};
 
