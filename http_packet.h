@@ -19,7 +19,7 @@ protected:
 		_uri.clear();
 		_version.clear();
 		_query_string.clear();
-		_body.clear();
+		_body.str("");
 	}
 protected:
 	std::map<std::string,std::string> _headers;	
@@ -30,8 +30,10 @@ protected:
 	std::string _version;
 	std::stringstream _body;
 public:
-	friend class http_client;
+	friend class http_request;
+	friend class http_response;
 	friend class http_server;
+	friend class http_client;
 };
 
 #endif

@@ -1,65 +1,47 @@
-#include "buffered_client_iostream.h"
-#include "tcp_server.h"
 #include "http_server.h"
 #include "tcp_socket.h"
-#include "thread_pool.h"
-#include "acceptor_base.h"
-#include <chrono>
-#include <thread>
+#include "http_servlet.h"
+#include "tcp_socket_factory.h"
 #include <iostream>
 #include <memory>
+#include <ctime>
+#include <sys/time.h>
 
-thread_pool tp(2);
-class client_handler : public buffered_client_iostream{
-public:
-	client_handler() : buffered_client_iostream(std::make_shared<tcp_socket>()){
-	//	set_condition(datasize(5));	
-	}
-public:
-	virtual void read(void* data, size_t size) override{
-		static int x=0;
-		std::string str = std::to_string(++x);
-		std::cout<<static_cast<char*>(data)<<std::endl;
-		write(str.c_str(),str.length());
-	}
-};
-class A : public acceptor_base{
-public:
-	virtual std::shared_ptr<client_iostream> get_new_client() override{
-		return std::make_shared<client_handler>();
-	}
-	virtual void notify_accept(std::shared_ptr<client_iostream> client, acceptor_status_t status) override{
-		client->write("hello\n",6);
-	}
-};
-void fun(int &x,int y){
-	for(int i=0;i<10;i++){
-		std::cout<<"tid:"<<std::this_thread::get_id()<<std::endl;
-		x+=y;
-		std::this_thread::sleep_for(std::chrono::seconds(1));
-	}
+std::string get_timestamp(){
+        struct timeval time_val;
+        if(gettimeofday(&time_val,NULL)==0){
+                char time_stamp[50];
+                struct tm tm_time;
+                localtime_r(&time_val.tv_sec, &tm_time);
+                strftime(time_stamp,sizeof(time_stamp),"%T",&tm_time);
+                std::string s_time_stamp(time_stamp);
+                s_time_stamp.append(":"+std::to_string(time_val.tv_usec/1000));
+                return s_time_stamp;
+        }
+        return "";
 }
-
-int main(){
-	using std::placeholders::_1;
-	using std::placeholders::_2;
-	int x=10;
-	int z=1;
-	tp.start();
-#if 0
-	tp.add_task(make_task(fun,x,2));
-	tp.add_task(make_task(fun,z,1));
-	tp.add_task(make_task(fun,z,4));
-	tp.add_task(make_task(fun,x,4));
-#endif
-#if 1
-	A obj;
-	http_server ts(std::make_shared<tcp_socket>(), 1);
-	ts.start(http_server::endpoint(1234));
-#endif
-	while(1){
-		std::this_thread::sleep_for(std::chrono::seconds(1));
-		std::cout<<"x:"<<x<<" z:"<<z<<std::endl;
+class servlet : public http_servlet{
+public:
+	virtual void do_get(http_request& request, http_response& response) override{
+		std::cout<<get_timestamp()<< " | Request: [URI:"<<request.get_path_info()<<"] "<<request.get_body().str()<<std::endl;
+		std::string resp_data("<Response><ResponseCode>Success</ResponseCode></Response>");
+		std::cout<<get_timestamp()<<" | Response: "<<resp_data<<std::endl;
+		response.write(resp_data.c_str(),resp_data.length());
 	}
-	tp.stop();
+	virtual void do_post(http_request& request, http_response& response) override{
+		do_get(request,response);
+	}
+	virtual std::shared_ptr<http_servlet> get_new_instance() override{
+		return std::make_shared<servlet>();
+	}
+};
+
+int main(int argc, char* argv[]){
+	int port=1234;
+	if(argc > 1)
+		port = std::stoi(argv[1]);
+	tcp_socket_factory sf;
+	http_server s(sf, 10);
+	s.register_servlet("/",std::make_shared<servlet>());
+	s.start(http_server::endpoint(port));
 }

@@ -2,41 +2,56 @@
 #define __HTTP_SERVER_H__07032016_RAJEN__
 
 #include "buffered_client_iostream.h"
-#include "tcp_server.h"
+#include "tcp_connection.h"
+#include "socket_factory.h"
 #include "tcp_socket.h"
 #include "thread_pool.h"
 #include "acceptor_base.h"
 #include "http_request.h"
 #include "http_response.h"
+#include "http_servlet.h"
 #include <chrono>
 #include <thread>
 #include <iostream>
 #include <memory>
 class http_server{
 public:
-	class http_client : public buffered_client_iostream{
+	class http_client : public buffered_client_iostream, 
+	public virtual http_request, public virtual http_response{
 		public:
-			http_client() : buffered_client_iostream(std::make_shared<tcp_socket>()){
+			http_client(std::map<std::string,std::shared_ptr<http_servlet> >& servlets_map) : 
+				buffered_client_iostream(std::make_unique<tcp_socket>()), _servlets_map(servlets_map){
+				set_condition(string_found("\r\n\r\n"));	
 				set_condition(string_found("\n\n"));	
 			}
 		public:
-			virtual void read(void* data, size_t size) override;
+			virtual void notify() override;
+			virtual bool write(const void* data, size_t size) override;
 		private:
 			bool set_request_header(const std::string& http_header_data);
 			bool decode_request_method(std::string& http_header_data);
 			bool decode_http_headers(std::string& http_header_data);
+			http_servlet* find_servlet(const std::string& request_uri);
 		private:
-			http_request _request;
-			http_response _response;
+			std::map<std::string, std::shared_ptr<http_servlet> >& _servlets_map;
 	};
 
 	class http_accpetor : public acceptor_base{
 		public:
+			http_accpetor(std::map<std::string, std::shared_ptr<http_servlet> >& servlets_map) : _servlets_map(servlets_map){
+			}
+		public:
 			virtual std::shared_ptr<client_iostream> get_new_client() override{
-				return std::make_shared<http_client>();
+				return std::make_shared<http_client>(_servlets_map);
 			}
 			virtual void notify_accept(std::shared_ptr<client_iostream> client, acceptor_status_t status) override{
-				_client_map[client->get_socket().get_fd()] = client;
+				int fd = client->get_fd();
+				auto it = _client_map.find(fd);	
+				if(it != _client_map.end()){
+					_client_map.erase(it);
+				}
+				//_client_map[client->get_fd()] = client;
+				_client_map.insert(std::pair<int,std::shared_ptr<client_iostream>>(fd,client));
 				client->register_close_handler(std::bind(&http_accpetor::close,this,std::placeholders::_1));
 			}
 		public:
@@ -48,6 +63,7 @@ public:
 			}
 		private:
 			std::map<int,std::shared_ptr<client_iostream>> _client_map;	
+			std::map<std::string, std::shared_ptr<http_servlet> >& _servlets_map;
 	};
 
 
@@ -65,18 +81,20 @@ public:
 	friend class http_server;
 	};
 public:
-	http_server(std::shared_ptr<socket_base> socket, unsigned int max_thread) : 
-		_tcp_server(socket, max_thread,_acceptor){
+	http_server(socket_factory& sf, unsigned int max_thread) : _tcp_connection(sf, max_thread){
 	}
-	http_server(std::shared_ptr<socket_base> socket, std::shared_ptr<thread_pool> threads) : 
-		_tcp_server(socket, threads, _acceptor){
+	http_server(socket_factory& sf, std::shared_ptr<thread_pool> threads) :	_tcp_connection(sf, threads){
 	}
 public:
+	void register_servlet(const std::string& pattern, std::shared_ptr<http_servlet> servlet){
+		_servlets_map[pattern] = servlet;
+	}
 	void start(const endpoint &e, bool block=true){
-		_tcp_server.start(tcp_server::endpoint(e.port,e.ip,e.backlog), block);
+		_tcp_connection.start_listening(std::make_shared<http_accpetor>(_servlets_map),tcp_connection::endpoint(e.port,e.ip,e.backlog), block);
+		_tcp_connection.start_reactor();
 	}	
 private:
-	tcp_server _tcp_server;
-	http_accpetor _acceptor;
+	std::map<std::string, std::shared_ptr<http_servlet> > _servlets_map;
+	tcp_connection _tcp_connection;
 };
 #endif
