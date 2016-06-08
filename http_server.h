@@ -87,8 +87,9 @@ public:
 	void register_servlet(const std::string& pattern, std::shared_ptr<http_servlet> servlet){
 		_servlets_map[pattern] = servlet;
 	}
-	void start(const endpoint &e, bool block=true){
-		_tcp_connection.start_listening(std::make_shared<http_accpetor>(_servlets_map),tcp_connection::endpoint(e.port,e.ip,e.backlog), block);
+	void start(const endpoint &e,int max_connection,bool block=true){
+		_tcp_connection.start_listening(std::make_shared<http_accpetor>(_servlets_map),tcp_connection::endpoint(e.port,e.ip,e.backlog),
+				max_connection,block);
 		_tcp_connection.start_reactor();
 	}	
 private:
