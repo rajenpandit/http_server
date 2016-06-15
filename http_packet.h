@@ -5,35 +5,155 @@
 #include <sstream>
 #include <iostream>
 #include <map>
+#include <vector>
+#include <experimental/string_view>
 
 class http_packet{
 public:
-	enum http_method{GET,POST,PUT,DELETE};
-protected:
-	http_packet() : _body(std::ios_base::in | std::ios_base::out | std::ios_base::binary){
+	enum http_method{NONE,GET,POST,PUT,DELETE};
+public:
+	http_packet() = default;
+	http_packet(const std::vector<char>& data){
+		_http_packet_data = data;
 	}
+public:
+	/*Assigning data to container*/
+	void assign(const std::vector<char>& data){
+                _http_packet_data = data;
+        }
+	void assign(const std::string& data){
+		_http_packet_data.assign(data.begin(), data.end());
+	}
+	template<std::size_t size>
+	void assign(const char (&arr)[size]){
+		_http_packet_data.assign(std::begin(arr),std::end(arr)-1);
+	}
+	void assign(const char* p, std::size_t size){
+		_http_packet_data.clear();
+		_http_packet_data.assign(p, p+size);
+	}
+
+	/*Appending data to container*/
+	void append(const std::vector<char>& data){
+                _http_packet_data.insert(_http_packet_data.end(),data.begin(),data.end());
+        }
+	void append(const std::string& data){
+		_http_packet_data.insert(_http_packet_data.end(),data.begin(), data.end());
+	}
+	template<std::size_t size>
+	void append(const char (&arr)[size]){
+                _http_packet_data.insert(_http_packet_data.end(),std::begin(arr),std::end(arr)-1);
+	}
+	void append(const char* p, std::size_t size){
+		_http_packet_data.insert(_http_packet_data.end(), p, p+size);
+	}
+#if 1
+	void display(){
+		std::cout<<(char*)&_http_packet_data[0]<<std::endl;
+	}
+	void display_headers(){
+		std::cout<<_method << " " <<_uri << " " << _version << std::endl;
+		for( auto h : _headers)
+			std::cout << h.first << ": " << h.second << std::endl;
+		std::cout<<"\n"<<_http_body<<std::endl;
+	}
+#endif
+public:
 	void clear(){
-		_headers.clear();
-		_parameters.clear();
+		_http_packet_data.clear();
 		_method.clear();
 		_uri.clear();
 		_version.clear();
-		_query_string.clear();
-		_body.str("");
+		_headers.clear();
 	}
+
+	bool decode();
+	bool reset_header_body(){
+		return set_header_body();
+	}
+/*
+	const std::vector<char>& encode_request(){
+		return encode_request("");
+	}
+	const std::vector<char>& encode_response(){
+		return encode_response("");
+	}
+	const std::vector<char>& encode_response(){
+		return encode_response("");
+	}
+*/
+	const std::vector<char>& encode_request(const std::string& body="");
+	const std::vector<char>& encode_response(const std::string& response_code="200 OK",const std::string& body="");
+	const std::vector<char>& encode(const std::string& body="");
+public:
+	const std::map<std::string,std::string>& get_headers() const{
+		return _headers;
+	}
+	void set_headers(const std::map<std::string,std::string>& headers){
+		_headers = headers;
+	}
+	const std::string& get_header(const std::string& name) const {
+		auto it = _headers.find(name);
+		if(it != _headers.end())
+			return it->second;
+		return _empty;
+	}
+	void set_header(const std::string& name, const std::string& value){
+		_headers[name] = value;
+	}
+	const std::string& get_content_type() const{
+		return get_header("Content-Type");
+	}
+	void set_content_type(const std::string& value){
+		set_header("Content-Type",value);
+	}
+	unsigned int get_content_length() const{
+		const std::string& content_length = get_header("Content-Length");
+		if(!content_length.empty()){
+			return std::stoi(content_length);
+		}
+		return 0;
+	}
+
+	const std::string& get_method() const{
+		return _method;
+	}
+	void set_method(const std::string& method){
+		_method = method;
+	}
+	const std::string& get_uri() const{
+		return _uri;
+	}
+	void set_uri(const std::string& uri){
+		_uri = uri;
+	}
+	const std::string& get_version() const{
+		return _version;
+	}
+	void set_version(const std::string& version){
+		_version = version;
+	}
+	const std::string get_body() const{
+		return _http_body.to_string();
+	}
+private:
+	void set_content_length(unsigned int length){
+		set_header("Content-Length",std::to_string(length));
+	}
+public:
+	bool set_header_body();
+	bool decode_http_header(const std::string& http_header);
+	bool decode_headers(std::string http_header);
+	bool decode_packet_info(const std::string& http_header);
 protected:
-	std::map<std::string,std::string> _headers;	
-	std::map<std::string,std::string> _parameters;	
+	std::vector<char> _http_packet_data;
+	std::string _empty; //helps to retrunning empty reference to empty string 
 	std::string _method;
 	std::string _uri;
-	std::string _query_string;
 	std::string _version;
-	std::stringstream _body;
-public:
-	friend class http_request;
-	friend class http_response;
-	friend class http_server;
-	friend class http_client;
+	std::map<std::string,std::string> _headers;	
+	std::experimental::string_view _http_header;
+	std::experimental::string_view _http_body;
 };
 
 #endif

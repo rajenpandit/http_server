@@ -22,13 +22,13 @@ std::string get_timestamp(){
 }
 class servlet : public http_servlet{
 public:
-	virtual void do_get(http_request& request, http_response& response) override{
-		std::cout<<get_timestamp()<< " | Request: [URI:"<<request.get_path_info()<<"] "<<request.get_body().str()<<std::endl;
+	virtual void do_get(http_servlet_request& request, http_servlet_response& response) override{
+//		std::cout<<get_timestamp()<< " | Request: [URI:"<<request.get_uri()<<"] "<<request.get_body()<<std::endl;
 		std::string resp_data("<Response><ResponseCode>Success</ResponseCode></Response>");
-		std::cout<<get_timestamp()<<" | Response: "<<resp_data<<std::endl;
+//		std::cout<<get_timestamp()<<" | Response: "<<resp_data<<std::endl;
 		response.write(resp_data.c_str(),resp_data.length());
 	}
-	virtual void do_post(http_request& request, http_response& response) override{
+	virtual void do_post(http_servlet_request& request, http_servlet_response& response) override{
 		do_get(request,response);
 	}
 	virtual std::shared_ptr<http_servlet> get_new_instance() override{
@@ -41,7 +41,7 @@ int main(int argc, char* argv[]){
 	if(argc > 1)
 		port = std::stoi(argv[1]);
 	tcp_socket_factory sf;
-	http_server s(sf, 10);
+	http_server s(sf, 1);
 	s.register_servlet("/",std::make_shared<servlet>());
-	s.start(http_server::endpoint(port),10);
+	s.start(http_server::endpoint(port),2000);
 }

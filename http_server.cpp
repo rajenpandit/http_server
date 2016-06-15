@@ -4,51 +4,46 @@
 #include <sstream>
 #include <iostream>
 
-void http_server::http_client::notify(){
-	while(is_data_available())
-	{
-		std::vector<char> data = get_data();
-		if(data.empty())
-			return;
-		std::string http_packet_data(data.begin(),data.end());
-		if(get_content_length() == 0){
-
-			std::string http_header_data=http_packet_data;
-			if(set_request_header(http_header_data)){
-				if(size_t l = get_content_length()){
-					clear_conditions();
-					set_condition(datasize(l));
-					continue;
-				}
-				else if(_request._method == "GET"){
-					http_servlet* servlet = find_servlet(_request._uri);
-					if(servlet == nullptr)
-						servlet = find_servlet("/");
-					if(servlet != nullptr)
-						servlet->do_get(*this,*this);
-					else
-						std::cout<<"No Servlet found"<<std::endl;
-
-				}
+void http_server::http_server_request::notify(const std::vector<char>& data){
+	if(data.empty())
+		return;
+	if(_request.get_content_length() == 0){
+		_request.assign(data);
+		if(_request.decode()){
+			if(size_t l = _request.get_content_length()){
+				clear_conditions();
+				set_condition(datasize(l));
+			}
+			else if(_request.get_method() == "GET"){
+				http_servlet* servlet = find_servlet(_request.get_uri());
+				if(servlet == nullptr)
+					servlet = find_servlet("/");
+				if(servlet != nullptr)
+					servlet->do_get(*this,*this);
+				else
+					std::cout<<"No Servlet found"<<std::endl;
 			}
 		}
 		else{
-			_request._body.write(static_cast<const char*>(&data[0]),data.size());
-			clear_conditions();
-			set_condition(string_found("\r\n\r\n"));
-			set_condition(string_found("\n\n"));
-			http_servlet* servlet = find_servlet(_request._uri);
-			if(servlet == nullptr)
-				servlet = find_servlet("/");
-			if(servlet != nullptr)
-				servlet->do_post(*this,*this);
-			else
-				std::cout<<"No Servlet found"<<std::endl;
+			std::cout<<"Error:"<<"Decode Failed"<<std::endl;
 		}
+	}
+	else{
+		_request.append(data);
+		clear_conditions();
+		set_condition(string_found("\r\n\r\n"));
+		set_condition(string_found("\n\n"));
+		http_servlet* servlet = find_servlet(_request.get_uri());
+		if(servlet == nullptr)
+			servlet = find_servlet("/");
+		if(servlet != nullptr)
+			servlet->do_post(*this,*this);
+		else
+			std::cout<<"No Servlet found"<<std::endl;
 	}
 }
 
-http_servlet* http_server::http_client::find_servlet(const std::string& request_uri)
+http_servlet* http_server::http_server_request::find_servlet(const std::string& request_uri)
 {
 	auto it = _servlets_map.find(request_uri);
 	if( it == _servlets_map.end() ){
@@ -64,14 +59,15 @@ http_servlet* http_server::http_client::find_servlet(const std::string& request_
 }
 
 
-bool http_server::http_client::set_request_header(const std::string& http_header_data){
+#if 0
+bool http_server::http_server_request::set_request_header(const std::string& http_header_data){
 	std::string header_data = http_header_data;
 	if(decode_request_method(header_data)){
 		return decode_http_headers(header_data);
 	}
 	return false;
 }
-bool http_server::http_client::decode_request_method(std::string& http_header_data){
+bool http_server::http_server_request::decode_request_method(std::string& http_header_data){
 	std::string::size_type pos;
 	if( (pos=http_header_data.find("HTTP/")) == std::string::npos) 
 	{
@@ -140,7 +136,7 @@ bool http_server::http_client::decode_request_method(std::string& http_header_da
 	
 	return true;
 }
-bool http_server::http_client::decode_http_headers(std::string& header_data){
+bool http_server::http_server_request::decode_http_headers(std::string& header_data){
 	std::string::size_type pos;
 	while(true){
 		std::string header;
@@ -162,12 +158,16 @@ bool http_server::http_client::decode_http_headers(std::string& header_data){
 	}
 	return true;
 }
-
+#endif
 
 
 
 //------------------------- http_server_encode---------------------------------
-bool http_server::http_client::write(const void* data, size_t size){
+bool http_server::http_server_request::write(const void* data, size_t size){
+	auto &v = _response.encode_response(std::string(static_cast<const char*>(data),size));
+
+	return buffered_client_iostream::write(&v[0],v.size());
+#if 0
 	std::stringstream ss;
 	if(_responseCode.empty() && !_response._method.empty()){
 		ss << _response._method << " ";
@@ -199,4 +199,6 @@ bool http_server::http_client::write(const void* data, size_t size){
 	_request.clear();
 	_response.clear();
 	return buffered_client_iostream::write(ss.str().c_str(),ss.str().size());
+#endif
+	return true;
 }
