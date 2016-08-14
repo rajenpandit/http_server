@@ -1,3 +1,4 @@
+VERSION=1.0.0.0.0
 CXX=g++
 CXXFLAGS:=-std=c++14 -static-libstdc++ -static-libgcc -Wall -Wextra -Wpedantic -O3
 TCP_SERVER=../tcp_server
