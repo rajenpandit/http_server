@@ -10,40 +10,27 @@
 #include "http_servlet_request.h"
 #include "http_servlet_response.h"
 #include "http_servlet.h"
+#include "http_connection.h"
 #include <chrono>
 #include <thread>
 #include <iostream>
 #include <memory>
 #include <mutex>
+namespace rpt{
 class http_server{
 public:
-	class http_server_request : public buffered_client_iostream, 
-	public virtual http_servlet_request, public virtual http_servlet_response{
-		public:
-			http_server_request(std::map<std::string,std::shared_ptr<http_servlet> >& servlets_map) : 
-				buffered_client_iostream(std::make_unique<tcp_socket>()), _servlets_map(servlets_map){
-				set_condition(string_found("\r\n\r\n"));	
-				set_condition(string_found("\n\n"));	
-			}
-		public:
-			virtual void notify(const std::vector<char>& data) override;
-			virtual bool write(const void* data, size_t size) override;
-		private:
-			bool set_request_header(const std::string& http_header_data);
-			bool decode_request_method(std::string& http_header_data);
-			bool decode_http_headers(std::string& http_header_data);
-			http_servlet* find_servlet(const std::string& request_uri);
-		private:
-			std::map<std::string, std::shared_ptr<http_servlet> >& _servlets_map;
-	};
-
 	class http_acceptor : public acceptor_base{
 		public:
-			http_acceptor(std::map<std::string, std::shared_ptr<http_servlet> >& servlets_map) : _servlets_map(servlets_map){
+			http_acceptor(std::map<std::string, std::shared_ptr<http_servlet> >& servlets_map, 
+					const std::shared_ptr<socket_factory>& sf, http_server* server) :
+				_servlets_map(servlets_map),_socket_factory(sf),_server(server){
 			}
 		public:
 			virtual std::shared_ptr<client_iostream> get_new_client() override{
-				return std::make_shared<http_server_request>(_servlets_map);
+				auto client = std::make_shared<http_connection>(_socket_factory);
+				client->register_callback(std::bind(&http_server::notify,_server,
+							std::placeholders::_1,std::placeholders::_2));
+				return client;
 			}
 			virtual void notify_accept(std::shared_ptr<client_iostream> client, acceptor_status_t status) override{
 				if(status == acceptor_base::ACCEPT_SUCCESS){
@@ -64,6 +51,8 @@ public:
 			std::map<int,std::shared_ptr<client_iostream>> _client_map;	
 			std::mutex _client_map_mutex;
 			std::map<std::string, std::shared_ptr<http_servlet> >& _servlets_map;
+			std::shared_ptr<socket_factory> _socket_factory;
+			http_server* _server;
 	};
 
 
@@ -81,21 +70,26 @@ public:
 	friend class http_server;
 	};
 public:
-	http_server(socket_factory& sf, unsigned int max_thread) : _tcp_connection(sf, max_thread){
+	http_server(const std::shared_ptr<socket_factory>& sf, unsigned int max_thread) : _socket_factory(sf),
+	_tcp_connection(sf, max_thread){
 	}
-	http_server(socket_factory& sf, std::shared_ptr<thread_pool> threads) :	_tcp_connection(sf, threads){
+	http_server(const std::shared_ptr<socket_factory>& sf, std::shared_ptr<thread_pool> threads) :	_tcp_connection(sf, threads){
 	}
 public:
 	void register_servlet(const std::string& pattern, std::shared_ptr<http_servlet> servlet){
 		_servlets_map[pattern] = servlet;
 	}
-	void start(const endpoint &e,int max_connection,bool block=true){
-		_tcp_connection.start_listening(std::make_shared<http_acceptor>(_servlets_map),tcp_connection::endpoint(e.port,e.ip,e.backlog),
-				max_connection,block);
-		_tcp_connection.start_reactor();
+	void start(const endpoint &e,unsigned int max_connection=std::numeric_limits<unsigned int>::max(),bool block=true){
+		_tcp_connection.start(std::make_shared<http_acceptor>(_servlets_map,_socket_factory,this),
+				tcp_connection::endpoint(e.port,e.ip,e.backlog),max_connection,block);
 	}	
 private:
+	void notify(std::shared_ptr<http_servlet_request> request, std::shared_ptr<http_servlet_response> response);	
+	http_servlet* find_servlet(const std::string& request_uri);
+private:
 	std::map<std::string, std::shared_ptr<http_servlet> > _servlets_map;
+	std::shared_ptr<socket_factory> _socket_factory;
 	tcp_connection _tcp_connection;
 };
+}
 #endif

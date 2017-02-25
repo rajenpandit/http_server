@@ -7,7 +7,7 @@
 #include <map>
 #include <vector>
 #include <experimental/string_view>
-
+namespace rpt{
 class http_packet{
 public:
 	enum http_method{NONE,GET,POST,PUT,DELETE};
@@ -36,17 +36,22 @@ public:
 	/*Appending data to container*/
 	void append(const std::vector<char>& data){
                 _http_packet_data.insert(_http_packet_data.end(),data.begin(),data.end());
+		set_header_body();
         }
 	void append(const std::string& data){
 		_http_packet_data.insert(_http_packet_data.end(),data.begin(), data.end());
+		set_header_body();
 	}
 	template<std::size_t size>
 	void append(const char (&arr)[size]){
                 _http_packet_data.insert(_http_packet_data.end(),std::begin(arr),std::end(arr)-1);
+		set_header_body();
 	}
 	void append(const char* p, std::size_t size){
 		_http_packet_data.insert(_http_packet_data.end(), p, p+size);
+		set_header_body();
 	}
+
 #if 1
 	void display(){
 		std::cout<<(char*)&_http_packet_data[0]<<std::endl;
@@ -61,6 +66,7 @@ public:
 public:
 	void clear(){
 		_http_packet_data.clear();
+		_status_code.clear();
 		_method.clear();
 		_uri.clear();
 		_version.clear();
@@ -83,7 +89,7 @@ public:
 	}
 */
 	const std::vector<char>& encode_request(const std::string& body="");
-	const std::vector<char>& encode_response(const std::string& response_code="200 OK",const std::string& body="");
+	const std::vector<char>& encode_response(const std::string& body="");
 	const std::vector<char>& encode(const std::string& body="");
 public:
 	const std::map<std::string,std::string>& get_headers() const{
@@ -114,7 +120,13 @@ public:
 		}
 		return 0;
 	}
-
+	
+	const std::string& get_status_code() const{
+		return _status_code;
+	}
+	void set_status_code(const std::string& status_code){
+		_status_code = status_code;
+	}
 	const std::string& get_method() const{
 		return _method;
 	}
@@ -136,6 +148,12 @@ public:
 	const std::string get_body() const{
 		return _http_body.to_string();
 	}
+	const char* get_data() const{
+		if(_http_packet_data.size())
+			return &_http_packet_data[0];
+		else
+			return nullptr;
+	}
 private:
 	void set_content_length(unsigned int length){
 		set_header("Content-Length",std::to_string(length));
@@ -144,10 +162,12 @@ public:
 	bool set_header_body();
 	bool decode_http_header(const std::string& http_header);
 	bool decode_headers(std::string http_header);
-	bool decode_packet_info(const std::string& http_header);
+	bool decode_response_info(const std::string& http_header);
+	bool decode_request_info(const std::string& http_header);
 protected:
 	std::vector<char> _http_packet_data;
-	std::string _empty; //helps to retrunning empty reference to empty string 
+	std::string _empty; //helps to returnning empty reference to empty string 
+	std::string _status_code;
 	std::string _method;
 	std::string _uri;
 	std::string _version;
@@ -155,5 +175,6 @@ protected:
 	std::experimental::string_view _http_header;
 	std::experimental::string_view _http_body;
 };
+}
 
 #endif
